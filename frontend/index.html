@@ -10,6 +10,14 @@
   <h2>CPU Usage: <span id="cpu">Loading...</span>%</h2>
   <h2>Memory Usage: <span id="memory">Loading...</span></h2>
 
+  <input type="text" id="search" placeholder="Search process..." onkeyup="fetchData()">
+  <p id="alertBox"></p>
+
+<select id="sort" onchange="fetchData()">
+  <option value="cpu">Sort by CPU</option>
+  <option value="memory">Sort by Memory</option>
+</select>
+
   <table border="1">
     <thead>
       <tr>
