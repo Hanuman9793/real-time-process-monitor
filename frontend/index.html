@@ -1,67 +1,81 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-  <title>Process Dashboard</title>
-  <link rel="stylesheet" href="style.css">
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Process Monitor</title>
+  <link rel="stylesheet" href="style.css" />
 </head>
 <body>
-<h1>Real-Time Dashboard</h1>
 
-  <h2>CPU Usage: <span id="cpu">Loading...</span>%</h2>
-  <h2>Memory Usage: <span id="memory">Loading...</span></h2>
+  <header>
+    <h1>⚙ Real-Time Process Dashboard</h1>
+    <div id="lastUpdated" class="last-updated">Waiting...</div>
+  </header>
 
-  <input type="text" id="search" placeholder="Search process..." onkeyup="fetchData()">
-  <p id="alertBox"></p>
+  <!-- Alert Banner -->
+  <div id="alertBox" class="alert-box"></div>
 
-<select id="sort" onchange="fetchData()">
-  <option value="cpu">Sort by CPU</option>
-  <option value="memory">Sort by Memory</option>
-</select>
-
-  <table border="1">
-    <thead>
-      <tr>
-        <th>PID</th>
-        <th>Name</th>
-        <th>CPU</th>
-        <th>Memory</th>
-      </tr>
-    </thead>
-    <tbody id="processTable"></tbody>
-  </table>
-
-  <h1>📊 Real-Time Process Dashboard</h1>
-
-  <div class="container">
+  <!-- ── Stat Cards ── -->
+  <section class="cards">
 
     <div class="card">
       <h2>CPU Usage</h2>
-      <canvas id="cpuChart"></canvas>
+      <div class="big-value" id="cpuValue">–</div>
+      <div class="progress-track">
+        <div class="progress-bar" id="cpuBar"></div>
+      </div>
+      <canvas id="cpuChart" height="100"></canvas>
     </div>
 
     <div class="card">
       <h2>Memory Usage</h2>
-      <p id="memory">Loading...</p>
+      <div class="mem-row">
+        <canvas id="memChart" width="120" height="120"></canvas>
+        <div class="mem-info">
+          <p><span class="label">Used</span> <strong id="memUsed">–</strong></p>
+          <p><span class="label">Total</span> <strong id="memTotal">–</strong></p>
+          <p><span class="label">Usage</span> <strong id="memPercent">–</strong></p>
+          <div class="progress-track">
+            <div class="progress-bar" id="memBar" style="background:#ef5350"></div>
+          </div>
+        </div>
+      </div>
     </div>
 
-  </div>
+  </section>
 
-  <h2>Processes</h2>
+  <!-- ── Process Table ── -->
+  <section class="table-section">
+    <div class="table-header">
+      <h2>Processes <span id="procCount" class="badge"></span></h2>
+      <div class="controls">
+        <input type="text" id="search" placeholder="🔍 Search by name…" oninput="fetchData()" />
+        <select id="sort" onchange="fetchData()">
+          <option value="cpu">Sort: CPU</option>
+          <option value="memory">Sort: Memory</option>
+        </select>
+      </div>
+    </div>
 
-  <table>
-    <thead>
-      <tr>
-        <th>PID</th>
-        <th>Name</th>
-        <th>CPU %</th>
-        <th>Memory %</th>
-      </tr>
-    </thead>
-    <tbody id="processTable"></tbody>
-  </table>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>PID</th>
+            <th>Name</th>
+            <th>CPU %</th>
+            <th>Mem %</th>
+            <th>State</th>
+            <th>Action</th>
+          </tr>
+        </thead>
+        <tbody id="processTable"></tbody>
+      </table>
+    </div>
+  </section>
 
-  <script src="script.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script src="script.js"></script>
 </body>
-
 </html>
