@@ -5,24 +5,55 @@
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
-
 <h1>Real-Time Dashboard</h1>
 
-<h2>CPU Usage: <span id="cpu">Loading...</span>%</h2>
-<h2>Memory Usage: <span id="memory">Loading...</span></h2>
+  <h2>CPU Usage: <span id="cpu">Loading...</span>%</h2>
+  <h2>Memory Usage: <span id="memory">Loading...</span></h2>
 
-<table border="1">
-  <thead>
-    <tr>
-      <th>PID</th>
-      <th>Name</th>
-      <th>CPU</th>
-      <th>Memory</th>
-    </tr>
-  </thead>
-  <tbody id="processTable"></tbody>
-</table>
+  <table border="1">
+    <thead>
+      <tr>
+        <th>PID</th>
+        <th>Name</th>
+        <th>CPU</th>
+        <th>Memory</th>
+      </tr>
+    </thead>
+    <tbody id="processTable"></tbody>
+  </table>
 
-<script src="script.js"></script>
+  <h1>📊 Real-Time Process Dashboard</h1>
+
+  <div class="container">
+
+    <div class="card">
+      <h2>CPU Usage</h2>
+      <canvas id="cpuChart"></canvas>
+    </div>
+
+    <div class="card">
+      <h2>Memory Usage</h2>
+      <p id="memory">Loading...</p>
+    </div>
+
+  </div>
+
+  <h2>Processes</h2>
+
+  <table>
+    <thead>
+      <tr>
+        <th>PID</th>
+        <th>Name</th>
+        <th>CPU %</th>
+        <th>Memory %</th>
+      </tr>
+    </thead>
+    <tbody id="processTable"></tbody>
+  </table>
+
+  <script src="script.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </body>
+
 </html>
