@@ -21,6 +21,7 @@
       </div>
     </div>
     <div class="header-right">
+      <div id="connStatus" class="status-pill disconnected">Connecting...</div>
       <div id="uptimeDisplay" class="uptime">Uptime: --:--:--</div>
       <div id="lastUpdated" class="last-updated">Waiting for sync...</div>
     </div>
@@ -33,9 +34,13 @@
       <span id="cpuModel" class="value">Loading...</span>
     </div>
     <div class="sys-item">
-      <span class="label">STATUS:</span>
+      <span class="label">LOAD AVG:</span>
+      <span id="loadAvg" class="value">-- , -- , --</span>
+    </div>
+    <div class="sys-item status-wrap">
+      <span class="label">CORE:</span>
       <span class="status-indicator online"></span>
-      <span class="value">System Online</span>
+      <span class="value">Active</span>
     </div>
   </div>
 
@@ -172,7 +177,8 @@
 
   </main>
 
+  <script src="/socket.io/socket.io.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   <script src="script.js"></script>
 </body>
-</html>
+</html>

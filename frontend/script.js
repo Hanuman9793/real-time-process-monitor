@@ -1,11 +1,9 @@
 // ─── Configuration & State ──────────────────────────────────────────────────
 
-const BASE_URL = 'http://localhost:3000';
-const POLLING_INTERVAL = 2000;
-const MAX_CHART_POINTS = 20;
-
+const MAX_CHART_POINTS = 30;
 let charts = {};
 let processData = [];
+let socket = null;
 
 // ─── Chart Initialization ───────────────────────────────────────────────────
 
@@ -59,7 +57,7 @@ function initCharts() {
         options: {
           responsive: true,
           maintainAspectRatio: false,
-          animation: { duration: 800 },
+          animation: { duration: 500 }, // Snappier for 1s updates
           plugins: { legend: { display: false } },
           scales: {
             x: { display: false },
@@ -140,7 +138,7 @@ function triggerAlert(message, level = 'warning') {
 
 async function fetchSystemStatic() {
   try {
-    const res = await fetch(`${BASE_URL}/system`);
+    const res = await fetch(`/system`);
     const data = await res.json();
     document.getElementById('osBadge').textContent = `${data.distro} ${data.release}`;
     document.getElementById('cpuModel').textContent = data.cpuModel;
@@ -152,7 +150,7 @@ async function fetchSystemStatic() {
 async function killProcess(pid) {
   if (!confirm(`Confirm termination of PID ${pid}?`)) return;
   try {
-    const res = await fetch(`${BASE_URL}/kill`, {
+    const res = await fetch(`/kill`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ pid })
@@ -160,7 +158,6 @@ async function killProcess(pid) {
     const data = await res.json();
     if (data.success) {
       triggerAlert(`Process ${pid} killed successfully`, 'success');
-      fetchData();
     } else {
       triggerAlert(`Error: ${data.error}`, 'danger');
     }
@@ -191,51 +188,61 @@ function renderProcesses() {
   document.getElementById('procCount').textContent = `${filtered.length} Processes`;
 }
 
-async function fetchData() {
-  try {
-    const [cpu, mem, disk, net, procs, sys] = await Promise.all([
-      fetch(`${BASE_URL}/cpu`).then(r => r.json()),
-      fetch(`${BASE_URL}/memory`).then(r => r.json()),
-      fetch(`${BASE_URL}/disk`).then(r => r.json()),
-      fetch(`${BASE_URL}/network`).then(r => r.json()),
-      fetch(`${BASE_URL}/processes`).then(r => r.json()),
-      fetch(`${BASE_URL}/system`).then(r => r.json())
-    ]);
+// ─── WebSocket Integration ───────────────────────────────────────────────────
 
-    // Updates
-    document.getElementById('cpuValue').textContent = `${cpu.cpuUsage}%`;
-    document.getElementById('cpuBar').style.width = `${cpu.cpuUsage}%`;
-    updateLineChart(charts.cpu, cpu.cpuUsage);
+function initSocket() {
+  // Use explicit URL to allow connection from both localhost:3000 and file:// preview
+  socket = io('http://localhost:3000');
+  const connStatus = document.getElementById('connStatus');
 
-    document.getElementById('memPercent').textContent = `${mem.usedPercent}%`;
-    document.getElementById('memUsed').textContent = formatBytes(mem.used);
-    document.getElementById('memTotal').textContent = formatBytes(mem.total);
-    document.getElementById('memBar').style.width = `${mem.usedPercent}%`;
-    charts.mem.data.datasets[0].data = [mem.usedPercent, 100 - mem.usedPercent];
-    charts.mem.update();
+  socket.on('connect', () => {
+    connStatus.textContent = 'Live Core Connected';
+    connStatus.className = 'status-pill connected';
+  });
 
-    document.getElementById('diskPercent').textContent = `${disk.usedPercent}%`;
-    document.getElementById('diskUsed').textContent = formatBytes(disk.used);
-    charts.disk.data.datasets[0].data = [disk.usedPercent, 100 - disk.usedPercent];
-    charts.disk.update();
+  socket.on('disconnect', () => {
+    connStatus.textContent = 'Disconnected - Retrying...';
+    connStatus.className = 'status-pill disconnected';
+  });
 
-    document.getElementById('netDown').textContent = `${(net.rx_sec / 1024).toFixed(1)} KB/s`;
-    document.getElementById('netUp').textContent = `${(net.tx_sec / 1024).toFixed(1)} KB/s`;
-    updateLineChart(charts.net, net.rx_sec / 1024);
+  socket.on('pulse', (data) => {
+    // CPU & Load
+    document.getElementById('cpuValue').textContent = `${data.cpu.usage}%`;
+    document.getElementById('cpuBar').style.width = `${data.cpu.usage}%`;
+    document.getElementById('loadAvg').textContent = data.cpu.loadAvg.join(' , ');
+    updateLineChart(charts.cpu, data.cpu.usage);
 
-    document.getElementById('uptimeDisplay').textContent = `Uptime: ${formatUptime(sys.uptime)}`;
+    // Memory
+    document.getElementById('memPercent').textContent = `${data.mem.usedPercent}%`;
+    document.getElementById('memUsed').textContent = formatBytes(data.mem.used);
+    document.getElementById('memTotal').textContent = formatBytes(data.mem.total);
+    document.getElementById('memBar').style.width = `${data.mem.usedPercent}%`;
+    charts.mem.data.datasets[0].data = [data.mem.usedPercent, 100 - data.mem.usedPercent];
+    charts.mem.update('none');
+
+    // Disk
+    document.getElementById('diskPercent').textContent = `${data.disk.usedPercent}%`;
+    document.getElementById('diskUsed').textContent = formatBytes(data.disk.used);
+    charts.disk.data.datasets[0].data = [data.disk.usedPercent, 100 - data.disk.usedPercent];
+    charts.disk.update('none');
+
+    // Network
+    document.getElementById('netDown').textContent = `${(data.net.rx_sec / 1024).toFixed(1)} KB/s`;
+    document.getElementById('netUp').textContent = `${(data.net.tx_sec / 1024).toFixed(1)} KB/s`;
+    updateLineChart(charts.net, data.net.rx_sec / 1024);
+
+    // Misc
+    document.getElementById('uptimeDisplay').textContent = `Uptime: ${formatUptime(data.uptime)}`;
     document.getElementById('lastUpdated').textContent = `Last sync: ${new Date().toLocaleTimeString()}`;
 
-    processData = procs;
-    renderProcesses();
-
     // Contextual Alerts
-    if (cpu.cpuUsage > 90) triggerAlert('Critical CPU Load Detected', 'danger');
-    else if (mem.usedPercent > 85) triggerAlert('Memory usage exceeding 85%', 'warning');
+    if (data.cpu.usage > 90) triggerAlert('Critical CPU Load Detected', 'danger');
+  });
 
-  } catch (err) {
-    console.error('Data sync failed:', err);
-  }
+  socket.on('processes', (data) => {
+    processData = data;
+    renderProcesses();
+  });
 }
 
 // ─── Initialization ──────────────────────────────────────────────────────────
@@ -243,8 +250,7 @@ async function fetchData() {
 window.addEventListener('DOMContentLoaded', () => {
   initCharts();
   fetchSystemStatic();
-  fetchData();
-  setInterval(fetchData, POLLING_INTERVAL);
+  initSocket();
 });
 }%</td>
         <td><span class="state-badge state-${p.state}">${p.state}</span></td>

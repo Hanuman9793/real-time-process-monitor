@@ -83,7 +83,25 @@ header {
 .brand-text h1 span { color: var(--accent-blue); font-weight: 300; }
 .os-badge { font-size: 0.7rem; color: var(--text-muted); margin-top: -2px; }
 
-.header-right { text-align: right; }
+.header-right { display: flex; align-items: center; gap: 20px; text-align: right; }
+
+/* Status Pill */
+.status-pill {
+  font-size: 0.7rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em;
+  padding: 4px 12px; border-radius: 20px; border: 1px solid transparent;
+  transition: var(--transition);
+}
+.status-pill.connected {
+  background: rgba(0, 255, 195, 0.1); color: var(--accent-green); border-color: rgba(0, 255, 195, 0.2);
+  box-shadow: 0 0 10px rgba(0, 255, 195, 0.1);
+}
+.status-pill.disconnected {
+  background: rgba(255, 61, 113, 0.1); color: var(--accent-red); border-color: rgba(255, 61, 113, 0.2);
+  animation: pulse-red 2s infinite;
+}
+
+@keyframes pulse-red { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
+
 .uptime { font-size: 0.85rem; font-weight: 600; color: var(--accent-green); text-shadow: 0 0 10px rgba(0, 255, 195, 0.2); }
 .last-updated { font-size: 0.72rem; color: var(--text-muted); margin-top: 4px; }
 
