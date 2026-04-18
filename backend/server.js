@@ -49,6 +49,55 @@ app.get('/processes', async (req, res) => {
     }
 });
 
+// Disk Usage
+app.get('/disk', async (req, res) => {
+    try {
+        const disks = await si.fsSize();
+        // Return info for the main disk (usually at index 0 or filtered by mount)
+        const mainDisk = disks[0] || { use: 0, size: 0, used: 0 };
+        res.json({
+            usedPercent: Math.round(mainDisk.use),
+            total: mainDisk.size,
+            used: mainDisk.used
+        });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Network Stats
+app.get('/network', async (req, res) => {
+    try {
+        const stats = await si.networkStats();
+        // Current implementation returns the first active interface stats
+        const active = stats.find(s => s.operstate === 'up') || stats[0] || {};
+        res.json({
+            rx_sec: Math.round(active.rx_sec || 0),
+            tx_sec: Math.round(active.tx_sec || 0)
+        });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// System Info
+app.get('/system', async (req, res) => {
+    try {
+        const os = await si.osInfo();
+        const cpu = await si.cpu();
+        const time = si.time();
+        res.json({
+            platform: os.platform,
+            distro: os.distro,
+            release: os.release,
+            cpuModel: `${cpu.manufacturer} ${cpu.brand}`,
+            uptime: time.uptime
+        });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
 // Kill Process
 app.post('/kill', async (req, res) => {
     const { pid } = req.body;

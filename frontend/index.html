@@ -3,80 +3,176 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Process Monitor</title>
+  <title>Pulse | Advanced System Monitor</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
 
+  <!-- Top Navigation / Header -->
   <header>
-    <h1>⚙ Real-Time Process Dashboard</h1>
-    <div id="lastUpdated" class="last-updated">Waiting...</div>
+    <div class="brand">
+      <div class="logo-icon">▲</div>
+      <div class="brand-text">
+        <h1>PULSE<span>MONITOR</span></h1>
+        <div id="osBadge" class="os-badge">Detecting OS...</div>
+      </div>
+    </div>
+    <div class="header-right">
+      <div id="uptimeDisplay" class="uptime">Uptime: --:--:--</div>
+      <div id="lastUpdated" class="last-updated">Waiting for sync...</div>
+    </div>
   </header>
+
+  <!-- System Info Bar -->
+  <div class="system-bar">
+    <div class="sys-item">
+      <span class="label">CPU MODEL:</span>
+      <span id="cpuModel" class="value">Loading...</span>
+    </div>
+    <div class="sys-item">
+      <span class="label">STATUS:</span>
+      <span class="status-indicator online"></span>
+      <span class="value">System Online</span>
+    </div>
+  </div>
 
   <!-- Alert Banner -->
   <div id="alertBox" class="alert-box"></div>
 
-  <!-- ── Stat Cards ── -->
-  <section class="cards">
-
-    <div class="card">
-      <h2>CPU Usage</h2>
-      <div class="big-value" id="cpuValue">–</div>
-      <div class="progress-track">
-        <div class="progress-bar" id="cpuBar"></div>
+  <main class="dashboard-grid">
+    
+    <!-- CPU CARD -->
+    <div class="dashboard-card cpu-card">
+      <div class="card-header">
+        <div class="card-title">
+          <span class="icon">📈</span>
+          <h2>CPU Usage</h2>
+        </div>
+        <div class="big-value" id="cpuValue">0%</div>
       </div>
-      <canvas id="cpuChart" height="100"></canvas>
-    </div>
-
-    <div class="card">
-      <h2>Memory Usage</h2>
-      <div class="mem-row">
-        <canvas id="memChart" width="120" height="120"></canvas>
-        <div class="mem-info">
-          <p><span class="label">Used</span> <strong id="memUsed">–</strong></p>
-          <p><span class="label">Total</span> <strong id="memTotal">–</strong></p>
-          <p><span class="label">Usage</span> <strong id="memPercent">–</strong></p>
-          <div class="progress-track">
-            <div class="progress-bar" id="memBar" style="background:#ef5350"></div>
-          </div>
+      <div class="chart-container">
+        <canvas id="cpuChart"></canvas>
+      </div>
+      <div class="progress-container">
+        <div class="progress-track">
+          <div class="progress-bar" id="cpuBar"></div>
         </div>
       </div>
     </div>
 
-  </section>
-
-  <!-- ── Process Table ── -->
-  <section class="table-section">
-    <div class="table-header">
-      <h2>Processes <span id="procCount" class="badge"></span></h2>
-      <div class="controls">
-        <input type="text" id="search" placeholder="🔍 Search by name…" oninput="fetchData()" />
-        <select id="sort" onchange="fetchData()">
-          <option value="cpu">Sort: CPU</option>
-          <option value="memory">Sort: Memory</option>
-        </select>
+    <!-- MEMORY CARD -->
+    <div class="dashboard-card memory-card">
+      <div class="card-header">
+        <div class="card-title">
+          <span class="icon">🧠</span>
+          <h2>Memory Load</h2>
+        </div>
+        <div class="big-value" id="memPercent">0%</div>
+      </div>
+      <div class="mem-details">
+        <div class="chart-mini">
+          <canvas id="memChart"></canvas>
+        </div>
+        <div class="stats-list">
+          <div class="stat-item">
+            <span class="label">Used</span>
+            <span id="memUsed" class="val">--</span>
+          </div>
+          <div class="stat-item">
+            <span class="label">Total</span>
+            <span id="memTotal" class="val">--</span>
+          </div>
+        </div>
+      </div>
+      <div class="progress-container">
+        <div class="progress-track">
+          <div class="progress-bar" id="memBar" style="background:#ff3d71"></div>
+        </div>
       </div>
     </div>
 
-    <div class="table-wrap">
-      <table>
-        <thead>
-          <tr>
-            <th>PID</th>
-            <th>Name</th>
-            <th>CPU %</th>
-            <th>Mem %</th>
-            <th>State</th>
-            <th>Action</th>
-          </tr>
-        </thead>
-        <tbody id="processTable"></tbody>
-      </table>
+    <!-- DISK CARD -->
+    <div class="dashboard-card disk-card">
+      <div class="card-header">
+        <div class="card-title">
+          <span class="icon">💾</span>
+          <h2>Disk Storage</h2>
+        </div>
+        <div class="big-value" id="diskPercent">0%</div>
+      </div>
+      <div class="chart-container mini">
+        <canvas id="diskChart"></canvas>
+      </div>
+      <div class="stat-row">
+        <span class="label">Used Space</span>
+        <span id="diskUsed" class="val">--</span>
+      </div>
     </div>
-  </section>
-  <canvas id="cpuChart"></canvas>
+
+    <!-- NETWORK CARD -->
+    <div class="dashboard-card network-card">
+      <div class="card-header">
+        <div class="card-title">
+          <span class="icon">🌐</span>
+          <h2>Network Activity</h2>
+        </div>
+        <div class="net-summary">
+          <div class="net-stat down">
+            <span class="icon">↓</span>
+            <span id="netDown">0 KB/s</span>
+          </div>
+          <div class="net-stat up">
+            <span class="icon">↑</span>
+            <span id="netUp">0 KB/s</span>
+          </div>
+        </div>
+      </div>
+      <div class="chart-container">
+        <canvas id="netChart"></canvas>
+      </div>
+    </div>
+
+    <!-- PROCESS TABLE SECTION -->
+    <section class="process-section">
+      <div class="section-header">
+        <div class="title-wrap">
+          <h2>Active Processes</h2>
+          <span id="procCount" class="badge">0 Total</span>
+        </div>
+        <div class="table-controls">
+          <div class="search-box">
+            <input type="text" id="search" placeholder="Filter processes..." oninput="renderProcesses()" />
+          </div>
+          <select id="sort" onchange="renderProcesses()">
+            <option value="cpu">Sort by CPU</option>
+            <option value="memory">Sort by RAM</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="table-wrapper">
+        <table id="processTableMain">
+          <thead>
+            <tr>
+              <th>PID</th>
+              <th>Application</th>
+              <th>CPU Usage</th>
+              <th>Memory %</th>
+              <th>Status</th>
+              <th>Controls</th>
+            </tr>
+          </thead>
+          <tbody id="processTable"></tbody>
+        </table>
+      </div>
+    </section>
+
+  </main>
 
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   <script src="script.js"></script>
 </body>
-</html>
+</html>

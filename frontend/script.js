@@ -1,172 +1,252 @@
-// ─── Chart Setup ─────────────────────────────────────────────────────────────
+// ─── Configuration & State ──────────────────────────────────────────────────
 
-const cpuCtx = document.getElementById('cpuChart').getContext('2d');
-const memCtx = document.getElementById('memChart').getContext('2d');
+const BASE_URL = 'http://localhost:3000';
+const POLLING_INTERVAL = 2000;
+const MAX_CHART_POINTS = 20;
 
-const MAX_POINTS = 15;
-let cpuData = [];
-let memData = [];
-let labels = [];
+let charts = {};
+let processData = [];
 
-const cpuChart = new Chart(cpuCtx, {
-  type: 'line',
-  data: {
-    labels,
-    datasets: [{
-      label: 'CPU Usage %',
-      data: cpuData,
-      borderColor: '#4fc3f7',
-      backgroundColor: 'rgba(79,195,247,0.15)',
-      borderWidth: 2,
-      tension: 0.4,
-      pointRadius: 3,
-      fill: true
-    }]
-  },
-  options: {
-    animation: false,
-    scales: {
-      y: { min: 0, max: 100, ticks: { color: '#aaa' }, grid: { color: '#2a2a2a' } },
-      x: { ticks: { color: '#aaa', maxTicksLimit: 6 }, grid: { color: '#2a2a2a' } }
+// ─── Chart Initialization ───────────────────────────────────────────────────
+
+function initCharts() {
+  const chartConfigs = {
+    cpu: {
+      type: 'line',
+      target: 'cpuChart',
+      color: '#00f2ff',
+      options: { scales: { y: { min: 0, max: 100 } } }
     },
-    plugins: { legend: { labels: { color: '#ccc' } } }
-  }
-});
+    net: {
+      type: 'line',
+      target: 'netChart',
+      color: '#00ffc3',
+      options: { scales: { y: { beginAtZero: true } } }
+    },
+    mem: {
+      type: 'doughnut',
+      target: 'memChart',
+      colors: ['#ff3d71', '#1e1e1e'],
+      options: { cutout: '70%', plugins: { legend: { display: false } } }
+    },
+    disk: {
+      type: 'doughnut',
+      target: 'diskChart',
+      colors: ['#bc00ff', '#1e1e1e'],
+      options: { cutout: '70%', plugins: { legend: { display: false } } }
+    }
+  };
 
-const memChart = new Chart(memCtx, {
-  type: 'doughnut',
-  data: {
-    labels: ['Used', 'Free'],
-    datasets: [{
-      data: [0, 100],
-      backgroundColor: ['#ef5350', '#1e1e1e'],
-      borderWidth: 0
-    }]
-  },
-  options: {
-    cutout: '75%',
-    plugins: { legend: { labels: { color: '#ccc' } } }
-  }
-});
+  Object.entries(chartConfigs).forEach(([key, cfg]) => {
+    const ctx = document.getElementById(cfg.target).getContext('2d');
+    
+    if (cfg.type === 'line') {
+      const gradient = ctx.createLinearGradient(0, 0, 0, 150);
+      gradient.addColorStop(0, `${cfg.color}33`);
+      gradient.addColorStop(1, `${cfg.color}00`);
+
+      charts[key] = new Chart(ctx, {
+        type: 'line',
+        data: { labels: [], datasets: [{ 
+          data: [], 
+          borderColor: cfg.color, 
+          backgroundColor: gradient,
+          fill: true,
+          tension: 0.4,
+          pointRadius: 0,
+          borderWidth: 2
+        }]},
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          animation: { duration: 800 },
+          plugins: { legend: { display: false } },
+          scales: {
+            x: { display: false },
+            y: { 
+              grid: { color: 'rgba(255,255,255,0.05)' },
+              ticks: { color: '#64748b', font: { size: 10 } },
+              ...cfg.options?.scales?.y
+            }
+          }
+        }
+      });
+    } else {
+      charts[key] = new Chart(ctx, {
+        type: 'doughnut',
+        data: {
+          labels: ['Used', 'Free'],
+          datasets: [{
+            data: [0, 100],
+            backgroundColor: cfg.colors,
+            borderWidth: 0,
+            hoverOffset: 4
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          ...cfg.options
+        }
+      });
+    }
+  });
+}
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function formatBytes(bytes) {
-  const gb = bytes / 1024 / 1024 / 1024;
-  return gb >= 1 ? gb.toFixed(2) + ' GB' : (bytes / 1024 / 1024).toFixed(0) + ' MB';
+  if (bytes === 0) return '0 B';
+  const k = 1024;
+  const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
 }
 
-function getTimestamp() {
-  return new Date().toLocaleTimeString();
+function formatUptime(seconds) {
+  const h = Math.floor(seconds / 3600);
+  const m = Math.floor((seconds % 3600) / 60);
+  const s = Math.floor(seconds % 60);
+  return [h, m, s].map(v => v < 10 ? '0' + v : v).join(':');
 }
 
-function pushChartData(value) {
-  if (cpuData.length >= MAX_POINTS) {
-    cpuData.shift();
+function updateLineChart(chart, value) {
+  const labels = chart.data.labels;
+  const data = chart.data.datasets[0].data;
+
+  if (data.length >= MAX_CHART_POINTS) {
+    data.shift();
     labels.shift();
   }
-  cpuData.push(value);
-  labels.push(getTimestamp());
-  cpuChart.update();
+  
+  data.push(value);
+  labels.push('');
+  chart.update('none'); 
 }
 
 // ─── Alert System ─────────────────────────────────────────────────────────────
 
-let lastAlertTime = 0;
-const ALERT_COOLDOWN_MS = 10000;
-
 function triggerAlert(message, level = 'warning') {
-  const now = Date.now();
-  if (now - lastAlertTime < ALERT_COOLDOWN_MS) return;
-  lastAlertTime = now;
-
   const alertBox = document.getElementById('alertBox');
   alertBox.textContent = message;
   alertBox.className = `alert-box alert-${level} visible`;
 
   setTimeout(() => {
     alertBox.className = 'alert-box';
-  }, 5000);
+  }, 4000);
 }
 
-// ─── Kill Process ─────────────────────────────────────────────────────────────
+// ─── Core Logic ───────────────────────────────────────────────────────────────
+
+async function fetchSystemStatic() {
+  try {
+    const res = await fetch(`${BASE_URL}/system`);
+    const data = await res.json();
+    document.getElementById('osBadge').textContent = `${data.distro} ${data.release}`;
+    document.getElementById('cpuModel').textContent = data.cpuModel;
+  } catch (err) {
+    console.error('Static info fetch failed');
+  }
+}
 
 async function killProcess(pid) {
-  if (!confirm(`Are you sure you want to kill PID ${pid}?`)) return;
+  if (!confirm(`Confirm termination of PID ${pid}?`)) return;
   try {
-    const res = await fetch('http://localhost:3000/kill', {
+    const res = await fetch(`${BASE_URL}/kill`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ pid })
     });
     const data = await res.json();
-    triggerAlert(data.success ? `✔ PID ${pid} terminated` : `✖ ${data.error}`, data.success ? 'success' : 'danger');
-  } catch {
-    triggerAlert('✖ Could not reach server', 'danger');
+    if (data.success) {
+      triggerAlert(`Process ${pid} killed successfully`, 'success');
+      fetchData();
+    } else {
+      triggerAlert(`Error: ${data.error}`, 'danger');
+    }
+  } catch (err) {
+    triggerAlert('Action failed: Server unreachable', 'danger');
   }
 }
 
-// ─── Fetch & Render ───────────────────────────────────────────────────────────
+function renderProcesses() {
+  const search = document.getElementById('search').value.toLowerCase();
+  const sort = document.getElementById('sort').value;
+  const tbody = document.getElementById('processTable');
+  
+  let filtered = processData.filter(p => p.name.toLowerCase().includes(search));
+  filtered.sort((a, b) => sort === 'cpu' ? b.pcpu - a.pcpu : b.pmem - a.pmem);
+
+  tbody.innerHTML = filtered.map(p => `
+    <tr>
+      <td><span class="badge">${p.pid}</span></td>
+      <td class="app-name">${p.name}</td>
+      <td class="cpu-pct">${p.pcpu}%</td>
+      <td class="mem-pct">${p.pmem}%</td>
+      <td><span class="status-tag ${p.state}">${p.state}</span></td>
+      <td><button class="kill-btn" onclick="killProcess(${p.pid})">Terminate</button></td>
+    </tr>
+  `).join('');
+
+  document.getElementById('procCount').textContent = `${filtered.length} Processes`;
+}
 
 async function fetchData() {
-  const search = document.getElementById('search').value.toLowerCase().trim();
-  const sort   = document.getElementById('sort').value;
-
   try {
-    // CPU
-    const cpuRes = await fetch('http://localhost:3000/cpu');
-    const cpu = await cpuRes.json();
-    const usage = cpu.cpuUsage;
+    const [cpu, mem, disk, net, procs, sys] = await Promise.all([
+      fetch(`${BASE_URL}/cpu`).then(r => r.json()),
+      fetch(`${BASE_URL}/memory`).then(r => r.json()),
+      fetch(`${BASE_URL}/disk`).then(r => r.json()),
+      fetch(`${BASE_URL}/network`).then(r => r.json()),
+      fetch(`${BASE_URL}/processes`).then(r => r.json()),
+      fetch(`${BASE_URL}/system`).then(r => r.json())
+    ]);
 
-    document.getElementById('cpuValue').textContent = usage + '%';
-    document.getElementById('cpuBar').style.width = usage + '%';
-    document.getElementById('cpuBar').style.background =
-      usage > 80 ? '#ef5350' : usage > 50 ? '#ffa726' : '#4fc3f7';
+    // Updates
+    document.getElementById('cpuValue').textContent = `${cpu.cpuUsage}%`;
+    document.getElementById('cpuBar').style.width = `${cpu.cpuUsage}%`;
+    updateLineChart(charts.cpu, cpu.cpuUsage);
 
-    pushChartData(usage);
-
-    if (usage > 80) triggerAlert(`⚠ High CPU Usage: ${usage}%`, 'warning');
-
-    // Memory
-    const memRes = await fetch('http://localhost:3000/memory');
-    const mem = await memRes.json();
-
-    document.getElementById('memUsed').textContent  = formatBytes(mem.used);
+    document.getElementById('memPercent').textContent = `${mem.usedPercent}%`;
+    document.getElementById('memUsed').textContent = formatBytes(mem.used);
     document.getElementById('memTotal').textContent = formatBytes(mem.total);
-    document.getElementById('memPercent').textContent = mem.usedPercent + '%';
-    document.getElementById('memBar').style.width = mem.usedPercent + '%';
+    document.getElementById('memBar').style.width = `${mem.usedPercent}%`;
+    charts.mem.data.datasets[0].data = [mem.usedPercent, 100 - mem.usedPercent];
+    charts.mem.update();
 
-    memChart.data.datasets[0].data = [mem.usedPercent, 100 - mem.usedPercent];
-    memChart.update();
+    document.getElementById('diskPercent').textContent = `${disk.usedPercent}%`;
+    document.getElementById('diskUsed').textContent = formatBytes(disk.used);
+    charts.disk.data.datasets[0].data = [disk.usedPercent, 100 - disk.usedPercent];
+    charts.disk.update();
 
-    if (mem.usedPercent > 85) triggerAlert(`⚠ High Memory Usage: ${mem.usedPercent}%`, 'warning');
+    document.getElementById('netDown').textContent = `${(net.rx_sec / 1024).toFixed(1)} KB/s`;
+    document.getElementById('netUp').textContent = `${(net.tx_sec / 1024).toFixed(1)} KB/s`;
+    updateLineChart(charts.net, net.rx_sec / 1024);
 
-    // Processes
-    const procRes = await fetch('http://localhost:3000/processes');
-    let procs = await procRes.json();
+    document.getElementById('uptimeDisplay').textContent = `Uptime: ${formatUptime(sys.uptime)}`;
+    document.getElementById('lastUpdated').textContent = `Last sync: ${new Date().toLocaleTimeString()}`;
 
-    if (search) procs = procs.filter(p => p.name.toLowerCase().includes(search));
+    processData = procs;
+    renderProcesses();
 
-    procs.sort((a, b) => sort === 'cpu' ? b.pcpu - a.pcpu : b.pmem - a.pmem);
+    // Contextual Alerts
+    if (cpu.cpuUsage > 90) triggerAlert('Critical CPU Load Detected', 'danger');
+    else if (mem.usedPercent > 85) triggerAlert('Memory usage exceeding 85%', 'warning');
 
-    const tbody = document.getElementById('processTable');
-    tbody.innerHTML = '';
+  } catch (err) {
+    console.error('Data sync failed:', err);
+  }
+}
 
-    procs.forEach(p => {
-      const highCPU = p.pcpu > 10;
-      const row = document.createElement('tr');
-      if (highCPU) row.classList.add('highlight');
+// ─── Initialization ──────────────────────────────────────────────────────────
 
-      row.innerHTML = `
-        <td>${p.pid}</td>
-        <td>${p.name}</td>
-        <td>
-          <div class="mini-bar-wrap">
-            <div class="mini-bar" style="width:${Math.min(p.pcpu, 100)}%;background:${highCPU ? '#ef5350' : '#4fc3f7'}"></div>
-            <span>${p.pcpu}%</span>
-          </div>
-        </td>
-        <td>${p.pmem}%</td>
+window.addEventListener('DOMContentLoaded', () => {
+  initCharts();
+  fetchSystemStatic();
+  fetchData();
+  setInterval(fetchData, POLLING_INTERVAL);
+});
+}%</td>
         <td><span class="state-badge state-${p.state}">${p.state}</span></td>
         <td><button class="kill-btn" onclick="killProcess(${p.pid})">Kill</button></td>
       `;
