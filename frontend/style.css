@@ -72,6 +72,29 @@ body {
   transition: background 0.4s ease, color 0.4s ease;
 }
 
+/* ── HUD Mode ────────────────────────────────────────────────────────────── */
+body.hud-mode header .brand-text,
+body.hud-mode header .timeline-controls,
+body.hud-mode .system-bar,
+body.hud-mode .chart-container,
+body.hud-mode .progress-container,
+body.hud-mode .cores-section,
+body.hud-mode .process-section,
+body.hud-mode .mem-details,
+body.hud-mode .stat-row,
+body.hud-mode .connections-card,
+body.hud-mode .docker-card,
+body.hud-mode .gpu-details,
+body.hud-mode .net-summary { display: none !important; }
+
+body.hud-mode .dashboard-grid { grid-template-columns: repeat(2, 1fr) !important; padding: 20px; }
+body.hud-mode .dashboard-card { grid-column: span 1 !important; border-color: transparent !important; background: transparent; box-shadow: none !important; padding: 0 !important; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 40vh; transform: none !important; }
+body.hud-mode .dashboard-card .card-header { flex-direction: column; align-items: center; gap: 20px; }
+body.hud-mode .dashboard-card h2 { font-size: 2rem !important; }
+body.hud-mode .dashboard-card .big-value { font-size: 8rem !important; text-shadow: 0 0 40px currentColor; }
+body.hud-mode header { border-bottom: none; background: transparent; }
+
+
 h1, h2, h3 { font-weight: 700; letter-spacing: -0.02em; }
 span.label { font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-muted); font-weight: 600; }
 
@@ -142,6 +165,31 @@ span.label { font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05
 .detail-item .d-value { font-size: 0.9rem; font-weight: 600; color: var(--text-main); word-break: break-all; }
 .detail-cmd { grid-column: span 2; }
 .process-modal-actions { display: flex; gap: 10px; margin-top: 20px; flex-wrap: wrap; }
+
+/* ── Automation Modal ────────────────────────────────────────────────────── */
+.auto-modal { max-width: 500px; }
+.auto-content h4 { font-size: 0.9rem; color: var(--text-dim); margin-bottom: 12px; }
+.auto-content input[type="text"], .auto-content input[type="number"] {
+  background: rgba(0,0,0,0.3); border: 1px solid var(--border);
+  border-radius: 8px; padding: 10px 12px; color: var(--text-main);
+  font-family: inherit; font-size: 0.9rem; margin-bottom: 16px;
+  transition: var(--transition); width: 100%;
+}
+.auto-content input:focus { border-color: var(--accent-blue); outline: none; }
+.rule-builder { display: flex; align-items: center; gap: 10px; margin-bottom: 16px; }
+.rule-builder label { font-size: 0.85rem; color: var(--text-muted); display: flex; align-items: center; gap: 8px; flex: 1; }
+.rule-builder input { margin-bottom: 0; text-align: center; }
+.auto-content hr { border: none; border-top: 1px solid var(--border); margin: 24px 0; }
+.rule-list { list-style: none; display: flex; flex-direction: column; gap: 8px; }
+.rule-list li {
+  background: rgba(255,255,255,0.05); padding: 10px 14px; border-radius: 8px;
+  display: flex; justify-content: space-between; align-items: center;
+  font-size: 0.85rem; color: var(--text-dim); border: 1px solid var(--border);
+}
+.rule-list li button {
+  background: transparent; border: none; color: var(--text-muted); cursor: pointer;
+}
+.rule-list li button:hover { color: var(--accent-red); }
 
 /* ── Header ──────────────────────────────────────────────────────────────── */
 header {
@@ -215,6 +263,11 @@ header {
 
 .uptime { font-size: 0.85rem; font-weight: 600; color: var(--accent-green); }
 .last-updated { font-size: 0.72rem; color: var(--text-muted); }
+.health-score-wrap { display: flex; flex-direction: column; align-items: center; }
+.score-badge { font-size: 1.1rem; font-weight: 800; }
+.health-good { color: var(--accent-green); text-shadow: 0 0 10px rgba(0,255,195,0.5); }
+.health-warn { color: var(--accent-gold); text-shadow: 0 0 10px rgba(255,184,0,0.5); }
+.health-bad  { color: var(--accent-red); text-shadow: 0 0 10px rgba(255,61,113,0.5); }
 
 /* ── System Bar ──────────────────────────────────────────────────────────── */
 .system-bar {
@@ -274,6 +327,11 @@ header {
 .card-title h2 { font-size: 0.85rem; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.05em; }
 .icon { font-size: 1.1rem; }
 
+.dashboard-card[draggable="true"] { cursor: grab; }
+.dashboard-card[draggable="true"]:active { cursor: grabbing; }
+.dashboard-card.dragging { opacity: 0.4; }
+.dashboard-card.drag-over { border-color: var(--accent-blue) !important; border-style: dashed; }
+
 .big-value { font-size: 2.2rem; font-weight: 700; color: var(--accent-blue); line-height: 1; }
 
 .temp-badge {
@@ -324,6 +382,8 @@ header {
 .net-stat { display: flex; align-items: center; gap: 6px; font-size: 0.9rem; font-weight: 600; }
 .net-stat.down { color: var(--accent-green); }
 .net-stat.up   { color: var(--accent-blue); }
+.io-stats { margin-top: 10px; display: flex; justify-content: space-between; font-size: 0.75rem; }
+.io-lbl { font-weight: 700; color: var(--text-muted); margin-right: 4px; }
 
 /* GPU Card */
 .gpu-card { grid-column: span 3; }
@@ -421,12 +481,20 @@ tbody tr:hover { background: rgba(255,255,255,0.02); }
 .mem-pct { color: var(--accent-purple); font-weight: 600; }
 
 .status-tag {
-  padding: 3px 9px; border-radius: 6px; font-size: 0.72rem; font-weight: 600; text-transform: capitalize;
+  padding: 3px 9px; border-radius: 6px; font-size: 0.72rem; font-weight: 600; text-transform: capitalize; border: 1px solid transparent;
 }
 .status-tag.running  { background: rgba(0,255,195,0.1); color: var(--accent-green); }
 .status-tag.sleeping { background: rgba(0,242,255,0.1); color: var(--accent-blue); }
 .status-tag.stopped  { background: rgba(255,184,0,0.1); color: var(--accent-gold); }
 .status-tag.zombie   { background: rgba(255,61,113,0.1); color: var(--accent-red); }
+.status-tag.online   { background: rgba(0,255,195,0.1); color: var(--accent-green); }
+.status-tag.offline  { background: rgba(255,61,113,0.1); color: var(--accent-red); }
+
+.anomaly-tag {
+  background: rgba(255,61,113,0.15); color: var(--accent-red); padding: 2px 6px;
+  border-radius: 4px; font-size: 0.65rem; margin-left: 8px; font-weight: 700;
+  border: 1px solid rgba(255,61,113,0.3); white-space: nowrap;
+}
 
 /* Process control buttons */
 .proc-controls { display: flex; gap: 6px; align-items: center; }

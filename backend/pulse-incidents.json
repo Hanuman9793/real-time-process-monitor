@@ -1,0 +1,9 @@
+[
+  {
+    "timestamp": "2026-04-19T16:46:26.218Z",
+    "type": "KILL",
+    "pid": 19648,
+    "processName": "conhost.exe",
+    "killedBy": "::1"
+  }
+]

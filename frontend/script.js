@@ -10,6 +10,11 @@ let isReadOnly = localStorage.getItem('pulseReadOnly') === 'true';
 let selectedPids = new Set();
 let logoPulseTimeout = null;
 
+let isHUD = false;
+let autoKillRules = [];
+let processBaselines = new Map();
+let processHistory = new Map();
+
 // ─── Theme Engine ─────────────────────────────────────────────────────────────
 
 function initTheme() {
@@ -106,6 +111,129 @@ function updateLineChart(chart, value) {
   data.push(value);
   labels.push('');
   chart.update('none');
+}
+
+// ─── New Features: HUD, Health, Sparklines, Rules ────────────────────────────
+
+function toggleHud() {
+  document.body.classList.toggle('hud-mode');
+  isHUD = document.body.classList.contains('hud-mode');
+}
+
+function calculateHealth(cpu, mem, temp) {
+  let score = 100;
+  if (cpu > 80) score -= (cpu - 80);
+  if (mem > 85) score -= (mem - 85);
+  if (temp && temp > 80) score -= (temp - 80);
+  return Math.max(0, Math.round(score));
+}
+
+function drawSparkline(canvasId, dataPoints) {
+  const canvas = document.getElementById(canvasId);
+  if (!canvas) return;
+  const ctx = canvas.getContext('2d');
+  const w = canvas.width;
+  const h = canvas.height;
+  ctx.clearRect(0, 0, w, h);
+  if (!dataPoints || dataPoints.length < 2) return;
+  const stepX = w / (dataPoints.length - 1);
+  ctx.beginPath();
+  ctx.strokeStyle = '#00f2ff';
+  ctx.lineWidth = 1.5;
+  dataPoints.forEach((val, i) => {
+    const x = i * stepX;
+    const y = h - ((val / 100) * h);
+    if (i === 0) ctx.moveTo(x, y);
+    else ctx.lineTo(x, y);
+  });
+  ctx.stroke();
+}
+
+async function saveWebhook() {
+  const input = document.getElementById('webhookInput').value;
+  try {
+    await fetch('/webhook/config', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-pulse-token': authToken || '' },
+      body: JSON.stringify({ urls: [input] })
+    });
+    triggerAlert('Webhook configured', 'success');
+  } catch (e) { triggerAlert('Failed to save webhook', 'danger'); }
+}
+
+function addAutoKillRule() {
+  const cpu = parseInt(document.getElementById('autoCpu').value);
+  const sec = parseInt(document.getElementById('autoSec').value);
+  if (cpu && sec) {
+    autoKillRules.push({ cpu, sec, triggeredTs: {} });
+    renderRules();
+  }
+}
+
+function renderRules() {
+  document.getElementById('ruleList').innerHTML = autoKillRules.map((r, i) => `
+    <li>Kill if > ${r.cpu}% for ${r.sec}s 
+    <button onclick="autoKillRules.splice(${i},1);renderRules()">✕</button></li>
+  `).join('');
+}
+
+function evaluateAutoKill(p) {
+  if (isReadOnly) return;
+  autoKillRules.forEach(rule => {
+    if (p.pcpu > rule.cpu) {
+      if (!rule.triggeredTs[p.pid]) rule.triggeredTs[p.pid] = Date.now();
+      else if ((Date.now() - rule.triggeredTs[p.pid]) > rule.sec * 1000) {
+        killProcess(p.pid);
+        triggerAlert(`Auto-killed ${p.name}`, 'warning');
+        delete rule.triggeredTs[p.pid];
+      }
+    } else {
+      delete rule.triggeredTs[p.pid];
+    }
+  });
+}
+
+function initDraggable() {
+  const cards = document.querySelectorAll('.dashboard-card[draggable="true"]');
+  const grid = document.querySelector('.dashboard-grid');
+
+  cards.forEach(card => {
+    card.addEventListener('dragstart', (e) => {
+      e.dataTransfer.setData('text/plain', card.id);
+      card.classList.add('dragging');
+    });
+    card.addEventListener('dragend', () => card.classList.remove('dragging'));
+  });
+
+  grid.addEventListener('dragover', (e) => {
+    e.preventDefault();
+    const dragging = document.querySelector('.dragging');
+    if (!dragging) return;
+    const siblings = [...grid.querySelectorAll('.dashboard-card:not(.dragging)')];
+    let nextSibling = siblings.find(sibling => {
+      const rect = sibling.getBoundingClientRect();
+      const offset = e.clientY - rect.top - rect.height / 2;
+      return offset < 0; 
+    });
+    if (nextSibling) grid.insertBefore(dragging, nextSibling);
+    else grid.appendChild(dragging);
+  });
+}
+
+async function fetchServices() {
+  try {
+    const res = await fetch('/services', { headers: { 'x-pulse-token': authToken || '' } });
+    if (!res.ok) return;
+    const list = await res.json();
+    document.getElementById('serviceCount').textContent = list.length;
+    document.getElementById('servicesList').innerHTML = list.map(s => `
+      <tr>
+        <td>${s.name.substring(0, 20)}</td>
+        <td><span class="status-tag ${s.running ? 'online' : 'stopped'}">${s.running ? 'Running' : 'Stopped'}</span></td>
+        <td>—</td>
+      </tr>
+    `).join('');
+  } catch (e) {}
 }
 
 // ─── Logo Pulse Animation (on data receive) ───────────────────────────────────
@@ -363,7 +491,7 @@ async function checkAuth() {
 
 async function submitAuth(readOnlyMode = false) {
   const input = document.getElementById('authInput').value;
-  const payload = readOnlyMode ? { password: '' } : { password: input };
+  const payload = readOnlyMode ? { password: '', readOnly: true } : { password: input };
 
   try {
     const res = await fetch('/auth', {
@@ -383,6 +511,11 @@ async function submitAuth(readOnlyMode = false) {
         document.getElementById('readOnlyBadge').style.display = '';
         triggerAlert('Viewing in Read-Only mode', 'warning');
       }
+      
+      // Re-initialize socket with token
+      if (socket) socket.disconnect();
+      initSocket();
+      
     } else {
       document.getElementById('authError').textContent = 'Invalid password. Try again.';
     }
@@ -480,59 +613,80 @@ function updateBatchBtn() {
 
 function showProcessDetail(proc) {
   const content = document.getElementById('processModalContent');
-  const uptime = proc.started ? `Started: ${proc.started}` : 'N/A';
 
-  content.innerHTML = `
-    <div class="process-detail-grid">
-      <div class="detail-item">
-        <div class="d-label">Process Name</div>
-        <div class="d-value">${proc.name}</div>
-      </div>
-      <div class="detail-item">
-        <div class="d-label">PID</div>
-        <div class="d-value">${proc.pid}</div>
-      </div>
-      <div class="detail-item">
-        <div class="d-label">Parent PID</div>
-        <div class="d-value">${proc.ppid || '—'}</div>
-      </div>
-      <div class="detail-item">
-        <div class="d-label">User</div>
-        <div class="d-value">${proc.user || '—'}</div>
-      </div>
-      <div class="detail-item">
-        <div class="d-label">CPU Usage</div>
-        <div class="d-value" style="color:var(--accent-blue)">${proc.pcpu}%</div>
-      </div>
-      <div class="detail-item">
-        <div class="d-label">Memory Usage</div>
-        <div class="d-value" style="color:var(--accent-purple)">${proc.pmem}%</div>
-      </div>
-      <div class="detail-item">
-        <div class="d-label">State</div>
-        <div class="d-value">${proc.state}</div>
-      </div>
-      <div class="detail-item">
-        <div class="d-label">Started</div>
-        <div class="d-value">${uptime}</div>
-      </div>
-      <div class="detail-item detail-cmd">
-        <div class="d-label">Command</div>
-        <div class="d-value">${proc.command || proc.name}</div>
-      </div>
-    </div>
-    ${!isReadOnly ? `
-    <div class="process-modal-actions">
+  // Safe helper - creates text nodes to prevent XSS
+  function safe(val) {
+    return String(val ?? '\u2014');
+  }
+
+  const uptime = proc.started ? `Started: ${safe(proc.started)}` : 'N/A';
+
+  // Build grid safely
+  const fields = [
+    ['Process Name', proc.name],
+    ['PID', proc.pid],
+    ['Parent PID', proc.ppid],
+    ['User', proc.user],
+    ['CPU Usage', `${proc.pcpu}%`],
+    ['Memory Usage', `${proc.pmem}%`],
+    ['State', proc.state],
+    ['Started', uptime]
+  ];
+
+  content.innerHTML = '';
+  const grid = document.createElement('div');
+  grid.className = 'process-detail-grid';
+
+  fields.forEach(([label, val]) => {
+    const item = document.createElement('div');
+    item.className = 'detail-item';
+    const lbl = document.createElement('div');
+    lbl.className = 'd-label';
+    lbl.textContent = label;
+    const v = document.createElement('div');
+    v.className = 'd-value';
+    v.textContent = safe(val);
+    if (label === 'CPU Usage') v.style.color = 'var(--accent-blue)';
+    if (label === 'Memory Usage') v.style.color = 'var(--accent-purple)';
+    item.appendChild(lbl);
+    item.appendChild(v);
+    grid.appendChild(item);
+  });
+
+  // Command row
+  const cmdItem = document.createElement('div');
+  cmdItem.className = 'detail-item detail-cmd';
+  cmdItem.innerHTML = '<div class="d-label">Command</div>';
+  const cmdVal = document.createElement('div');
+  cmdVal.className = 'd-value';
+  cmdVal.textContent = safe(proc.command || proc.name);
+  cmdItem.appendChild(cmdVal);
+  grid.appendChild(cmdItem);
+
+  content.appendChild(grid);
+
+  if (!isReadOnly) {
+    const actions = document.createElement('div');
+    actions.className = 'process-modal-actions';
+    actions.innerHTML = `
       <button class="kill-btn" onclick="killProcess(${proc.pid}); closeModal('processModal')">Terminate</button>
       <button class="proc-btn" onclick="suspendProcess(${proc.pid}); closeModal('processModal')">Suspend</button>
       <button class="proc-btn" onclick="resumeProcess(${proc.pid}); closeModal('processModal')">Resume</button>
-    </div>` : ''}
-  `;
+    `;
+    content.appendChild(actions);
+  }
+
   document.getElementById('processModal').classList.remove('hidden');
 }
 
 function closeModal(id) {
   document.getElementById(id).classList.add('hidden');
+}
+
+function showProcessDetailById(btn) {
+  const pid = parseInt(btn.getAttribute('data-proc-pid'));
+  const proc = processData.find(p => p.pid === pid);
+  if (proc) showProcessDetail(proc);
 }
 
 // Close modal on backdrop click
@@ -552,17 +706,34 @@ function renderProcesses() {
   let filtered = processData.filter(p => p.name.toLowerCase().includes(search));
   filtered.sort((a, b) => sort === 'cpu' ? b.pcpu - a.pcpu : b.pmem - a.pmem);
 
+  filtered.forEach(p => {
+    // History
+    let hist = processHistory.get(p.pid) || [];
+    hist.push(p.pcpu);
+    if (hist.length > 30) hist.shift();
+    processHistory.set(p.pid, hist);
+
+    // Baseline Anomaly
+    if (!processBaselines.has(p.pid)) processBaselines.set(p.pid, { count: 0, sum: 0, avg: p.pcpu });
+    const base = processBaselines.get(p.pid);
+    if (base.count < 60) { base.sum += p.pcpu; base.count++; base.avg = base.sum / base.count; }
+    p.anomaly = (base.count > 10 && p.pcpu > base.avg * 3 && p.pcpu > 20);
+
+    evaluateAutoKill(p);
+  });
+
   tbody.innerHTML = filtered.map(p => `
     <tr class="row-entering">
       <td><input type="checkbox" class="proc-select" data-pid="${p.pid}" ${selectedPids.has(p.pid) ? 'checked' : ''} onchange="togglePidSelect(this, ${p.pid})"></td>
       <td><span class="badge">${p.pid}</span></td>
-      <td class="app-name">${p.name}</td>
+      <td class="app-name">${p.name} ${p.anomaly ? '<span class="anomaly-tag">⚠ Anomaly</span>' : ''}</td>
       <td class="cpu-pct">${p.pcpu}%</td>
+      <td><canvas id="spark-${p.pid}" width="60" height="20"></canvas></td>
       <td class="mem-pct">${p.pmem}%</td>
-      <td><span class="status-tag ${p.state?.toLowerCase()}">${p.state || '—'}</span></td>
+      <td><span class="status-tag ${p.state?.toLowerCase() || 'unknown'}">${p.state || '—'}</span></td>
       <td>
         <div class="proc-controls">
-          <button class="proc-btn info-btn" onclick='showProcessDetail(${JSON.stringify(p)})'>Info</button>
+          <button class="proc-btn info-btn" data-proc-pid="${p.pid}" onclick="showProcessDetailById(this)">Info</button>
           ${!isReadOnly ? `<button class="kill-btn" onclick="killProcess(${p.pid})">Kill</button>` : ''}
         </div>
       </td>
@@ -570,6 +741,10 @@ function renderProcesses() {
   `).join('');
 
   document.getElementById('procCount').textContent = `${filtered.length} Processes`;
+
+  setTimeout(() => {
+    filtered.forEach(p => drawSparkline(`spark-${p.pid}`, processHistory.get(p.pid)));
+  }, 10);
 }
 
 // ─── Core Static Fetch ────────────────────────────────────────────────────────
@@ -589,7 +764,7 @@ async function fetchSystemStatic() {
 // ─── WebSocket Integration ───────────────────────────────────────────────────
 
 function initSocket() {
-  socket = io('http://localhost:3000');
+  socket = io(window.location.origin);
   const connStatus = document.getElementById('connStatus');
 
   socket.on('connect', () => {
@@ -608,7 +783,8 @@ function initSocket() {
     // CPU
     document.getElementById('cpuValue').textContent = `${data.cpu.usage}%`;
     document.getElementById('cpuBar').style.width = `${data.cpu.usage}%`;
-    document.getElementById('loadAvg').textContent = data.cpu.loadAvg.join(' , ');
+    const loadAvg = Array.isArray(data.cpu.loadAvg) ? data.cpu.loadAvg.join(' , ') : '0 , 0 , 0';
+    document.getElementById('loadAvg').textContent = loadAvg;
     updateLineChart(charts.cpu, data.cpu.usage);
     updateCores(data.cpu.cores);
     updateTempDisplay(data.cpu.temperature);
@@ -625,6 +801,10 @@ function initSocket() {
     // Disk
     document.getElementById('diskPercent').textContent = `${data.disk.usedPercent}%`;
     document.getElementById('diskUsed').textContent = formatBytes(data.disk.used);
+    if (data.disk.rIO_sec !== undefined) {
+      document.getElementById('diskRead').textContent = `${(data.disk.rIO_sec / 1024).toFixed(1)} KB/s`;
+      document.getElementById('diskWrite').textContent = `${(data.disk.wIO_sec / 1024).toFixed(1)} KB/s`;
+    }
     charts.disk.data.datasets[0].data = [data.disk.usedPercent, 100 - data.disk.usedPercent];
     charts.disk.update('none');
 
@@ -641,9 +821,31 @@ function initSocket() {
     // Battery
     updateBattery(data.battery);
 
+    // Docker
+    const dCard = document.getElementById('dockerCard');
+    if (data.docker && data.docker.length > 0) {
+      dCard.style.display = '';
+      document.getElementById('dockerCount').textContent = data.docker.length;
+      document.getElementById('dockerList').innerHTML = data.docker.map(d => `
+        <tr><td>${d.name}</td><td>${d.image}</td><td><span class="status-tag ${d.state === 'running' ? 'online' : 'offline'}">${d.state}</span></td></tr>
+      `).join('');
+    } else {
+      dCard.style.display = 'none';
+    }
+
     // Misc
     document.getElementById('uptimeDisplay').textContent = `Uptime: ${formatUptime(data.uptime)}`;
     document.getElementById('lastUpdated').textContent = `Sync: ${new Date().toLocaleTimeString()}`;
+
+    // Health Score & Ambient Glow
+    const score = calculateHealth(data.cpu.usage, data.mem.usedPercent, data.cpu.temperature);
+    const hBadge = document.getElementById('healthScoreBadge');
+    if (hBadge) {
+      hBadge.textContent = score;
+      hBadge.className = `score-badge ${score > 80 ? 'health-good' : (score > 50 ? 'health-warn' : 'health-bad')}`;
+    }
+    document.querySelector('.cpu-card').style.boxShadow = `0 0 20px ${data.cpu.usage > 85 ? 'rgba(255,61,113,0.3)' : 'transparent'}`;
+    document.querySelector('.memory-card').style.boxShadow = `0 0 20px ${data.mem.usedPercent > 85 ? 'rgba(255,61,113,0.3)' : 'transparent'}`;
 
     // Contextual Alerts
     if (data.cpu.usage > 90) triggerAlert(`Critical CPU Load: ${data.cpu.usage}%`, 'danger');
@@ -679,6 +881,7 @@ document.addEventListener('keydown', (e) => {
 window.addEventListener('DOMContentLoaded', async () => {
   initTheme();
   initCharts();
+  initDraggable();
 
   // Theme toggle
   document.getElementById('themeToggle').addEventListener('click', toggleTheme);
@@ -700,4 +903,8 @@ window.addEventListener('DOMContentLoaded', async () => {
   await checkAuth();
   await fetchSystemStatic();
   initSocket();
+  
+  // Occasional services sync
+  fetchServices();
+  setInterval(fetchServices, 30000);
 });
