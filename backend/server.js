@@ -262,7 +262,7 @@ app.get('/services', async (req, res) => {
 // Kill process
 app.post('/kill', mutatorCheck, async (req, res) => {
   const { pid } = req.body;
-  if (!pid) return res.status(400).json({ success: false, error: 'PID required' });
+  if (pid === undefined || pid === null || isNaN(parseInt(pid))) return res.status(400).json({ success: false, error: 'Invalid PID' });
   try {
     const procs = await si.processes();
     const proc = procs.list.find(p => p.pid === parseInt(pid));
@@ -280,7 +280,7 @@ app.post('/kill', mutatorCheck, async (req, res) => {
 // Change process priority (Nice value)
 app.post('/renice', mutatorCheck, async (req, res) => {
   const { pid, priority } = req.body;
-  if (!pid) return res.status(400).json({ success: false, error: 'PID required' });
+  if (pid === undefined || pid === null || isNaN(parseInt(pid))) return res.status(400).json({ success: false, error: 'Invalid PID' });
   try {
     const { execSync } = require('child_process');
     if (isWin) {
@@ -299,7 +299,7 @@ app.post('/renice', mutatorCheck, async (req, res) => {
 // Suspend process
 app.post('/suspend', mutatorCheck, async (req, res) => {
   const { pid } = req.body;
-  if (!pid) return res.status(400).json({ success: false, error: 'PID required' });
+  if (pid === undefined || pid === null || isNaN(parseInt(pid))) return res.status(400).json({ success: false, error: 'Invalid PID' });
   try {
     if (isWin) {
       require('child_process').execSync(`powershell -command "Suspend-Process -Id ${pid}"`);
@@ -316,7 +316,7 @@ app.post('/suspend', mutatorCheck, async (req, res) => {
 // Resume process
 app.post('/resume', mutatorCheck, async (req, res) => {
   const { pid } = req.body;
-  if (!pid) return res.status(400).json({ success: false, error: 'PID required' });
+  if (pid === undefined || pid === null || isNaN(parseInt(pid))) return res.status(400).json({ success: false, error: 'Invalid PID' });
   try {
     if (isWin) {
       require('child_process').execSync(`powershell -command "Resume-Process -Id ${pid}"`);
@@ -337,6 +337,7 @@ app.post('/kill-batch', mutatorCheck, async (req, res) => {
   const results = [];
   for (const pid of pids) {
     try {
+      if (pid === undefined || pid === null || isNaN(parseInt(pid))) throw new Error('Invalid PID');
       process.kill(parseInt(pid));
       logIncident('BATCH_KILL', { pid });
       results.push({ pid, success: true });
