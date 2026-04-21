@@ -1,3 +1,7 @@
+/**
+ * PulseMonitor Frontend Script
+ * Handles WebSocket communication, dynamic UI rendering, and user interactions.
+ */
 // ─── Configuration & State ──────────────────────────────────────────────────
 
 const MAX_CHART_POINTS = { 1: 60, 5: 300, 60: 3600 };
