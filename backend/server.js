@@ -408,6 +408,7 @@ app.post('/auth', (req, res) => {
 
 server.listen(PORT, () => {
   console.log(`PulseMonitor running on http://localhost:${PORT}`);
+  console.log(`System monitoring loops initialized successfully.`);
   if (CONFIG.password) {
     console.log(`Password protection: ENABLED (Mutator)`);
   }
