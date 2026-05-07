@@ -29,6 +29,8 @@ This project is built to provide **clear, real-time insights** into system perfo
 * HTML
 * CSS
 * JavaScript
+* chart.js
+* 
 
 **Backend (if used):**
 
